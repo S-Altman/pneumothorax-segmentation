@@ -2,6 +2,9 @@ import torch
 from torch.nn.utils import clip_grad_norm_
 torch.multiprocessing.set_sharing_strategy('file_system')
 
+from utils.mask_functions import compute_sdm_and_wmap
+
+
 import pandas as pd
 import numpy as np
 
@@ -10,6 +13,9 @@ from pathlib import Path
 
 import heapq
 from collections import defaultdict
+
+import warnings
+warnings.filterwarnings('ignore')
 
 class Learning():
     def __init__(self,
@@ -78,7 +84,9 @@ class Learning():
         return current_loss_mean
 
     def batch_train(self, model, batch_imgs, batch_labels, batch_idx):
-        batch_imgs, batch_labels = batch_imgs.to(self.device), batch_labels.to(self.device)
+        # batch_imgs, batch_labels = batch_imgs.to(self.device), batch_labels.to(self.device)
+        batch_imgs = batch_imgs.to(self.device)
+
         predicted = model(batch_imgs)
         loss = self.loss_fn(predicted, batch_labels)
 
@@ -114,7 +122,11 @@ class Learning():
     def batch_valid(self, model, batch_imgs):
         batch_imgs = batch_imgs.to(self.device)
         predicted = model(batch_imgs)
-        predicted = torch.sigmoid(predicted)
+        if isinstance(predicted, list):
+            predicted[0] = torch.sigmoid(predicted[0])
+            predicted[1] = torch.tanh(predicted[1])
+        else:
+            predicted = torch.sigmoid(predicted)
         return predicted
 
     def process_summary(self, metrics, epoch):

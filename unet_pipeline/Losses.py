@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from torch import nn
 from torch.autograd import Variable
 
+from utils.mask_functions import compute_sdm_and_wmap
+
 try:
     from itertools import ifilterfalse
 except ImportError:  # py3k
@@ -14,20 +16,21 @@ eps = 1e-6
 
 def soft_dice_loss(outputs, targets, per_image=False, per_channel=False):
     batch_size, n_channels = outputs.size(0), outputs.size(1)
-    
+
     eps = 1e-6
     n_parts = 1
     if per_image:
         n_parts = batch_size
     if per_channel:
         n_parts = batch_size * n_channels
-    
+
     dice_target = targets.contiguous().view(n_parts, -1).float()
     dice_output = outputs.contiguous().view(n_parts, -1)
     intersection = torch.sum(dice_output * dice_target, dim=1)
     union = torch.sum(dice_output, dim=1) + torch.sum(dice_target, dim=1) + eps
     loss = (1 - (2 * intersection + eps) / union).mean()
     return loss
+
 
 def dice_metric(preds, trues, per_image=False, per_channel=False):
     preds = preds.float()
@@ -135,8 +138,9 @@ class ComboLoss(nn.Module):
                 channels = targets.size(1)
                 for c in range(channels):
                     if not self.channel_losses or k in self.channel_losses[c]:
-                        val += self.channel_weights[c] * self.mapping[k](sigmoid_input[:, c, ...] if k in self.expect_sigmoid else outputs[:, c, ...],
-                                               targets[:, c, ...])
+                        val += self.channel_weights[c] * self.mapping[k](
+                            sigmoid_input[:, c, ...] if k in self.expect_sigmoid else outputs[:, c, ...],
+                            targets[:, c, ...])
 
             else:
                 val = self.mapping[k](sigmoid_input if k in self.expect_sigmoid else outputs, targets)
@@ -223,7 +227,7 @@ def lovasz_sigmoid(probas, labels, per_image=False, ignore=None):
     """
     if per_image:
         loss = mean(lovasz_sigmoid_flat(*flatten_binary_scores(prob.unsqueeze(0), lab.unsqueeze(0), ignore))
-                          for prob, lab in zip(probas, labels))
+                    for prob, lab in zip(probas, labels))
     else:
         loss = lovasz_sigmoid_flat(*flatten_binary_scores(probas, labels, ignore))
     return loss
@@ -244,8 +248,10 @@ def lovasz_sigmoid_flat(probas, labels):
     loss = torch.dot(errors_sorted, Variable(lovasz_grad(fg_sorted)))
     return loss
 
+
 def symmetric_lovasz(outputs, targets, ):
     return (lovasz_hinge(outputs, targets) + lovasz_hinge(-outputs, 1 - targets)) / 2
+
 
 def mean(l, ignore_nan=False, empty=0):
     """
@@ -279,6 +285,7 @@ class LovaszLoss(nn.Module):
         targets = targets.contiguous()
         return symmetric_lovasz(outputs, targets)
 
+
 class LovaszLossSigmoid(nn.Module):
     def __init__(self, ignore_index=255, per_image=True):
         super().__init__()
@@ -308,3 +315,48 @@ class FocalLoss2d(nn.Module):
         targets = torch.clamp(targets, eps, 1. - eps)
         pt = (1 - targets) * (1 - outputs) + targets * outputs
         return (-(1. - pt) ** self.gamma * torch.log(pt)).mean()
+
+
+class BoundaryWeightedLoss(nn.Module):
+    def __init__(self):
+        super(BoundaryWeightedLoss, self).__init__()
+        self.l2_loss = torch.nn.MSELoss(reduction='none')
+
+    # def compute_boundary(self, mask):
+    #     contour_map = np.ones(mask.shape)
+    #
+    #     for i, m in enumerate(mask):
+    #         if m.any():
+    #             boundary = find_boundaries(m, mode='inner').astype(np.uint8)
+    #             contour_map[i] += boundary
+    #
+    #     return contour_map
+
+    def forward(self, outputs, sdm_gt, w_map):
+
+        outputs = torch.tanh(outputs)
+        loss = self.l2_loss(outputs, sdm_gt)
+        loss *= w_map
+
+        return loss.mean()
+
+
+class CombineLoss(nn.Module):
+    def __init__(self, seg_loss_weights, device):
+        super(CombineLoss, self).__init__()
+        self.device = device
+        self.seg_loss = ComboLoss(seg_loss_weights)
+        self.dis_loss = BoundaryWeightedLoss()
+
+    def forward(self, outputs, targets):
+
+        sdm_gt, w_map = compute_sdm_and_wmap(targets, True)
+
+        targets = targets.to(self.device)
+        w_map = torch.from_numpy(w_map).float().to(self.device, non_blocking=True)
+        sdm_gt = torch.from_numpy(sdm_gt).float().to(self.device, non_blocking=True)
+
+        seg_loss = self.seg_loss(outputs[0], targets)
+        dis_loss = self.dis_loss(outputs[1], sdm_gt, w_map)
+
+        return seg_loss + dis_loss

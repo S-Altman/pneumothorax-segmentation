@@ -12,6 +12,7 @@ def load_yaml(file_name):
         config = yaml.load(stream, Loader=yaml.SafeLoader)
     return config
 
+
 def init_seed(SEED=42):
     os.environ['PYTHONHASHSEED'] = str(SEED)
     np.random.seed(SEED)
@@ -19,11 +20,12 @@ def init_seed(SEED=42):
     torch.cuda.manual_seed(SEED)
     torch.backends.cudnn.deterministic = True
 
+
 def init_logger(directory, log_file_name):
     formatter = logging.Formatter('\n%(asctime)s\t%(message)s', datefmt='%m/%d/%Y %H:%M:%S')
     log_path = Path(directory, log_file_name)
     if log_path.exists():
-    	log_path.unlink()
+        log_path.unlink()
     handler = logging.FileHandler(filename=log_path)
     handler.setFormatter(formatter)
 

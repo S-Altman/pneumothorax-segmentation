@@ -1,0 +1,86 @@
+#main
+PIPELINE_NAME: resnet_50
+DATA_DIRECTORY: '../../../dataset/siim/dataset1024'
+LOGGER_DIR: 'log'
+
+SEED: 42
+DEVICE: cuda
+DEVICE_LIST: [0]
+WORKERS: 12
+
+MODEL:
+  PRETRAINED:
+#    PIPELINE_PATH: experiments/albunet_public
+#    CHECKPOINTS_FOLDER: checkpoints
+#    PIPELINE_NAME: albunet_1024
+
+  FREEZE: False
+  PY: models.mynet
+  CLASS: Mynet
+  ARGS:
+      encoder_weights: imagenet
+
+FOLD:
+  NUMBER: 5
+  USEFOLDS: [0,1,2,3,4]
+  FILE: folds/train_folds_5.csv
+
+# preprocessing
+USE_SAMPLER: True
+NON_EMPTY_MASK_PROBA: 0.8
+
+TRAIN_TRANSFORMS:
+    transforms/train_transforms_complex_1024_old.json
+VALID_TRANSFORMS:
+    transforms/valid_transforms_1024_old.json
+
+# training
+CRITERION:
+    PY: Losses
+    CLASS: CombineLoss
+    ARGS:
+        seg_loss_weights:
+            bce: 10
+            dice: 1
+        device: cuda
+
+OPTIMIZER:
+  CLASS: Adam
+  ARGS:
+    lr: 0.0001
+    weight_decay: 0.000005
+
+SCHEDULER:
+  CLASS: ReduceLROnPlateau
+  ARGS:
+    mode: max
+    factor: 0.1
+    patience: 4
+    threshold: 0.0000001
+    min_lr: 0.0000001
+
+BATCH_SIZE: 8
+GRADIENT_ACCUMULATION_STEPS: 1
+GRADIENT_CLIPPING: 0.1
+EPOCHES: 50
+EARLY_STOPPING: 10
+
+# saving
+CHECKPOINTS:
+    FULL_FOLDER: checkpoints
+    BEST_FOLDER: checkpoints
+    TOPK: 5
+
+# validation
+MASK_BINARIZER:
+  PY: MaskBinarizers
+  CLASS: FusionMaskBinarization
+  ARGS:
+    triplets: [[0.75, 2000, -0.15]]
+
+EVALUATION_METRIC:
+  PY: Losses
+  CLASS: dice_metric
+  ARGS:
+    per_image: True
+
