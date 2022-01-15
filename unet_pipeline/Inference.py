@@ -56,8 +56,17 @@ def build_checkpoints_list(cfg):
 def inference_image(model, images, device):
     images = images.to(device)
     predicted = model(images)
-    masks = torch.sigmoid(predicted) 
-    masks = masks.squeeze(1).cpu().detach().numpy()
+
+    if isinstance(predicted, list):
+        masks = []
+        masks[0] = torch.sigmoid(predicted[0])
+        masks[1] = torch.tanh(predicted[1])
+        for mask in masks:
+            mask = mask.squeeze(1).cpu().detach().numpy()
+    else:
+        masks = torch.sigmoid(predicted)
+        masks = masks.squeeze(1).cpu().detach().numpy()
+
     return masks
 
 
@@ -68,10 +77,20 @@ def inference_model(model, loader, device, use_flip):
         if use_flip:
             flipped_imgs = torch.flip(images, dims=(3,))
             flipped_masks = inference_image(model, flipped_imgs, device)
-            flipped_masks = np.flip(flipped_masks, axis=2)
-            masks = (masks + flipped_masks) / 2
-        for name, mask in zip(image_ids, masks):
-            mask_dict[name] = mask.astype(np.float32)
+            if isinstance(flipped_masks, list):
+                for i, flipped_mask in enumerate(flipped_masks):
+                    flipped_mask = np.flip(flipped_mask, asis=2)
+                    masks[i] = (masks[i] + flipped_mask) / 2
+            else:
+                flipped_masks = np.flip(flipped_masks, axis=2)
+                masks = (masks + flipped_masks) / 2
+
+        if isinstance(masks, list):
+            for name, mask, dis in zip(image_ids, masks[0], masks[1]):
+                mask_dict[name] = [mask.astype(np.float32), dis.astype(np.float32)]
+        else:
+            for name, mask in zip(image_ids, masks):
+                mask_dict[name] = mask.astype(np.float32)
     return mask_dict
     
 
