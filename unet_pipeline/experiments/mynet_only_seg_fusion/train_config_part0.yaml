@@ -16,7 +16,7 @@ MODEL:
 
   FREEZE: False
   PY: models.mynet
-  CLASS: MynetWithoutFusion
+  CLASS: MynetOnlySegFusion
   ARGS:
       encoder_weights: imagenet
 
@@ -76,7 +76,9 @@ MASK_BINARIZER:
   PY: MaskBinarizers
   CLASS: FusionMaskBinarization
   ARGS:
-    triplets: [[0.75, 2000, -0.15]]
+    triplets:
+      [[0.75, 1000, -0.1], [0.75, 2000, -0.15], [0.75, 2000, -0.2], [0.75, 2000, -0.25],
+       [0.6, 2000, -0.1], [0.6, 2000, -0.15], [0.6, 3000, -0.2], [0.6, 3000, -0.25]]
 
 EVALUATION_METRIC:
   PY: Losses

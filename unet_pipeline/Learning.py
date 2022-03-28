@@ -110,6 +110,7 @@ class Learning():
                 mask_generator = self.binarizer_fn.transform(predicted_probas)
                 for current_thr, current_mask in zip(used_thresholds, mask_generator):
                     current_metric = self.eval_fn(current_mask, labels).item()
+                    # cm = current_mask.detach().cpu().numpy()
                     current_thr = tuple(current_thr)
                     metrics[current_thr] = (metrics[current_thr] * batch_idx + current_metric) / (batch_idx + 1)
 
@@ -206,6 +207,8 @@ class Learning():
             if epoch - self.best_epoch > self.early_stopping:
                 self.logger.info('EARLY STOPPING')
                 break
+
+        self.logger.info('best model: {} epoch - {:.5}'.format(self.best_epoch, self.best_score))
 
         return self.best_score, self.best_epoch
         

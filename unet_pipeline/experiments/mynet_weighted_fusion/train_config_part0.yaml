@@ -10,13 +10,13 @@ WORKERS: 12
 
 MODEL:
   PRETRAINED:
-#    PIPELINE_PATH: experiments/albunet_public
+#    PIPELINE_PATH: experiments/mynet_weighted_fusion
 #    CHECKPOINTS_FOLDER: checkpoints
-#    PIPELINE_NAME: albunet_1024
+#    PIPELINE_NAME: resnet_50
 
   FREEZE: False
   PY: models.mynet
-  CLASS: MynetWithoutFusion
+  CLASS: MynetWeightedFusion
   ARGS:
       encoder_weights: imagenet
 
@@ -40,8 +40,9 @@ CRITERION:
     CLASS: CombineLoss
     ARGS:
         seg_loss_weights:
-            bce: 10
+            bce: 1
             dice: 1
+            focal: 1
         device: cuda
 
 OPTIMIZER:
@@ -76,7 +77,9 @@ MASK_BINARIZER:
   PY: MaskBinarizers
   CLASS: FusionMaskBinarization
   ARGS:
-    triplets: [[0.75, 2000, -0.15]]
+    triplets:
+      [ [ 0.75, 1000, -0.1 ], [ 0.75, 2000, -0.15 ], [ 0.75, 2000, -0.2 ], [ 0.75, 2000, -0.25 ],
+        [ 0.6, 2000, -0.1 ], [ 0.6, 2000, -0.15 ], [ 0.6, 3000, -0.2 ], [ 0.6, 3000, -0.25 ] ]
 
 EVALUATION_METRIC:
   PY: Losses

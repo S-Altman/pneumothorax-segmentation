@@ -320,7 +320,7 @@ class FocalLoss2d(nn.Module):
 class BoundaryWeightedLoss(nn.Module):
     def __init__(self):
         super(BoundaryWeightedLoss, self).__init__()
-        self.l2_loss = torch.nn.MSELoss(reduction='none')
+        self.mse_loss = torch.nn.MSELoss(reduction='none')
 
     # def compute_boundary(self, mask):
     #     contour_map = np.ones(mask.shape)
@@ -333,9 +333,8 @@ class BoundaryWeightedLoss(nn.Module):
     #     return contour_map
 
     def forward(self, outputs, sdm_gt, w_map):
-
         outputs = torch.tanh(outputs)
-        loss = self.l2_loss(outputs, sdm_gt)
+        loss = self.mse_loss(outputs, sdm_gt)
         loss *= w_map
 
         return loss.mean()
@@ -349,7 +348,6 @@ class CombineLoss(nn.Module):
         self.dis_loss = BoundaryWeightedLoss()
 
     def forward(self, outputs, targets):
-
         sdm_gt, w_map = compute_sdm_and_wmap(targets, True)
 
         targets = targets.to(self.device)
@@ -360,3 +358,25 @@ class CombineLoss(nn.Module):
         dis_loss = self.dis_loss(outputs[1], sdm_gt, w_map)
 
         return seg_loss + dis_loss
+
+
+class CombineLossV2(CombineLoss):
+    def __init__(self, device):
+        super(CombineLossV2, self).__init__(None, device)
+        self.seg_loss = Focal_LnDiceLoss()
+
+
+class Focal_LnDiceLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.dice = DiceLoss(per_image=False)
+        self.focal = FocalLoss2d()
+
+    def forward(self, outputs, targets):
+        loss = 0
+        sigmoid_input = torch.sigmoid(outputs)
+
+        loss += 10 * self.focal(sigmoid_input, targets)
+        loss -= torch.log(self.dice(sigmoid_input, targets))
+
+        return loss.clamp(min=1e-5)
