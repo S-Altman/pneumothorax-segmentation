@@ -3,6 +3,7 @@ from torch.nn.utils import clip_grad_norm_
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 from utils.mask_functions import compute_sdm_and_wmap
+from utils.metrics import ConfusionMatrix, dice, jaccard, hausdorff_distance_95, avg_surface_distance
 
 
 import pandas as pd
@@ -10,6 +11,7 @@ import numpy as np
 
 from tqdm import tqdm
 from pathlib import Path
+from medpy.metric.binary import dc, jc, hd, asd
 
 import heapq
 from collections import defaultdict
@@ -101,24 +103,48 @@ class Learning():
         tqdm_loader = tqdm(loader)
         current_score_mean = 0
         used_thresholds = self.binarizer_fn.thresholds
-        metrics = defaultdict(float)
+        # metrics = defaultdict(float)
+        dices = defaultdict(float)
+        jacs = defaultdict(float)
+        hds = defaultdict(float)
+        asds = defaultdict(float)
 
         for batch_idx, (imgs, labels) in enumerate(tqdm_loader):
             with torch.no_grad():
                 predicted_probas = self.batch_valid(model, imgs)
-                labels = labels.to(self.device)
+                # labels = labels.to(self.device)
+                labels = labels.numpy()
                 mask_generator = self.binarizer_fn.transform(predicted_probas)
                 for current_thr, current_mask in zip(used_thresholds, mask_generator):
-                    current_metric = self.eval_fn(current_mask, labels).item()
+                    # current_metric = self.eval_fn(current_mask, labels).item()
                     # cm = current_mask.detach().cpu().numpy()
-                    current_thr = tuple(current_thr)
-                    metrics[current_thr] = (metrics[current_thr] * batch_idx + current_metric) / (batch_idx + 1)
+                    current_mask = current_mask.detach().cpu().numpy()
+                    confusion_matrix = ConfusionMatrix(test=current_mask, reference=labels)
 
-                best_threshold = max(metrics, key=metrics.get)
-                best_metric = metrics[best_threshold]
+                    # current_thr = tuple(current_thr)
+
+                    dice_batch = dice(confusion_matrix=confusion_matrix, nan_for_nonexisting=False)
+                    dices[current_thr] = (dices[current_thr] * batch_idx + dice_batch) / (batch_idx + 1)
+
+                    jac_batch = jaccard(confusion_matrix=confusion_matrix, nan_for_nonexisting=False)
+                    jacs[current_thr] = (jacs[current_thr] * batch_idx + jac_batch) / (batch_idx + 1)
+
+                    hd_batch = hausdorff_distance_95(confusion_matrix=confusion_matrix, nan_for_nonexisting=False)
+                    hds[current_thr] = (hds[current_thr] * batch_idx + hd_batch) / (batch_idx + 1)
+
+                    asd_batch = avg_surface_distance(confusion_matrix=confusion_matrix, nan_for_nonexisting=False)
+                    asds[current_thr] = (asds[current_thr] * batch_idx + asd_batch) / (batch_idx + 1)
+
+                    # metrics[current_thr] = (metrics[current_thr] * batch_idx + current_metric) / (batch_idx + 1)
+
+                best_threshold = max(dices, key=dices.get)
+                best_metric = dices[best_threshold]
+                best_jac = jacs[best_threshold]
+                best_hd = hds[best_threshold]
+                best_asd = asds[best_threshold]
                 tqdm_loader.set_description('score: {:.5} on {}'.format(best_metric, best_threshold))
 
-        return metrics, best_metric
+        return metrics, best_metric, best_jac, best_hd, best_asd
 
     def batch_valid(self, model, batch_imgs):
         batch_imgs = batch_imgs.to(self.device)
@@ -130,14 +156,17 @@ class Learning():
             predicted = torch.sigmoid(predicted)
         return predicted
 
-    def process_summary(self, metrics, epoch):
+    def process_summary(self, metrics, epoch, best_jac, best_hd, best_asd):
         best_threshold = max(metrics, key=metrics.get)
         best_metric = metrics[best_threshold]
 
         epoch_summary = pd.DataFrame.from_dict([metrics])
         epoch_summary['epoch'] = epoch
         epoch_summary['best_metric'] = best_metric
-        epoch_summary = epoch_summary[['epoch', 'best_metric'] + list(metrics.keys())]
+        epoch_summary['jac'] = best_jac
+        epoch_summary['hd'] = best_hd
+        epoch_summary['asd'] = best_asd
+        epoch_summary = epoch_summary[['epoch', 'best_metric', 'jac', 'hd', 'asd'] + list(metrics.keys())]
         epoch_summary.columns = [str(col) for col in epoch_summary.columns]
         
         self.logger.info('{} epoch: \t Score: {:.5}\t Params: {}'.format(epoch, best_metric, best_threshold))
@@ -198,9 +227,9 @@ class Learning():
 
             self.logger.info('{} epoch: \t start validation....'.format(epoch))
             model.eval()
-            metrics, score = self.valid_epoch(model, valid_dataloader)
+            metrics, score, best_jac, best_hd, best_asd = self.valid_epoch(model, valid_dataloader)
 
-            self.process_summary(metrics, epoch)
+            self.process_summary(metrics, epoch, best_jac, best_hd, best_asd)
 
             self.post_processing(score, epoch, model)
 

@@ -57,17 +57,14 @@ class FusionMaskBinarization(MaskBinarization):
             pred_mask[clf_mask.sum(dim=self.dims) < area_threshold] = 0
             yield pred_mask
 
-    def apply_transform(self, mask_predict, distancemap_predict, threshold):
-        mask_threshold, area_threshold, distancemap_threshold = threshold
-        clf_mask = mask_predict > mask_threshold
-        pred_mask = distancemap_predict < distancemap_threshold
-        pred_mask[clf_mask.sum(dim=self.dims) < area_threshold] = 0
-        return pred_mask
 
-    def apply_transform_numpy_perimage(self, threshold, **predicted):
-        mask_threshold, area_threshold, distancemap_threshold = threshold
-        clf_mask = predicted["mask_predict"] > mask_threshold
-        pred_mask = predicted["distancemap_predict"] < distancemap_threshold
-        if clf_mask.sum() < area_threshold:
-            pred_mask = np.zeros_like(pred_mask)
-        return pred_mask
+class SdmMaskBinarization(MaskBinarization):
+    def __init__(self, triplets, with_channels=True):
+        super().__init__()
+        self.thresholds = triplets
+        self.dims = (2, 3) if with_channels else (1, 2)
+
+    def transform(self, predicted):
+        _, distancemap_predict = predicted
+        for distancemap_threshold in self.thresholds:
+            yield distancemap_predict < distancemap_threshold

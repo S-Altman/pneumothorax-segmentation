@@ -3,6 +3,7 @@ import logging
 
 import pandas as pd
 import numpy as np
+import time
 
 from torch.utils.data import DataLoader
 import albumentations as albu 
@@ -106,7 +107,8 @@ def train_fold(
 def main():
     args = argparser()
     config_folder = Path(args.train_cfg.strip("/"))
-    experiment_folder = config_folder.parents[0]
+    time_str = time.strftime('%Y-%m-%d-%H-%M')
+    experiment_folder = Path(config_folder.parents[0],time_str)
 
     train_config = load_yaml(config_folder)
 
