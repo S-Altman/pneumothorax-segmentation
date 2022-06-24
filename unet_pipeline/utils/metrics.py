@@ -115,7 +115,8 @@ def dice(test=None, reference=None, confusion_matrix=None, nan_for_nonexisting=T
         if nan_for_nonexisting:
             return float("NaN")
         else:
-            return 0.
+            # return 0.
+            return 1.
 
     return float(2. * tp / (2 * tp + fp + fn))
 
@@ -133,7 +134,8 @@ def jaccard(test=None, reference=None, confusion_matrix=None, nan_for_nonexistin
         if nan_for_nonexisting:
             return float("NaN")
         else:
-            return 0.
+            # return 0.
+            return 1.
 
     return float(tp / (tp + fp + fn))
 

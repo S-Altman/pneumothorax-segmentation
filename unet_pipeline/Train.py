@@ -4,9 +4,10 @@ import logging
 import pandas as pd
 import numpy as np
 import time
+import cv2
 
 from torch.utils.data import DataLoader
-import albumentations as albu 
+import albumentations
 import torch
 
 import importlib
@@ -127,8 +128,32 @@ def main():
     pipeline_name = train_config['PIPELINE_NAME']
     dataset_folder = train_config['DATA_DIRECTORY'] 
 
-    train_transform = albu.load(train_config['TRAIN_TRANSFORMS']) 
-    valid_transform = albu.load(train_config['VALID_TRANSFORMS'])
+    # train_transform = albu.load(train_config['TRAIN_TRANSFORMS'])
+    # valid_transform = albu.load(train_config['VALID_TRANSFORMS'])
+
+    RESIZE_SIZE = 1024
+    train_transform = albumentations.Compose([
+        albumentations.Resize(RESIZE_SIZE, RESIZE_SIZE),
+        albumentations.OneOf([
+            albumentations.RandomGamma(gamma_limit=(60, 120), p=0.9),
+            albumentations.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.9),
+            albumentations.CLAHE(clip_limit=4.0, tile_grid_size=(4, 4), p=0.9),
+        ]),
+        albumentations.OneOf([
+            albumentations.Blur(blur_limit=4, p=1),
+            albumentations.MotionBlur(blur_limit=4, p=1),
+            albumentations.MedianBlur(blur_limit=5, p=1)
+        ], p=0.5),
+        albumentations.HorizontalFlip(p=0.5),
+        albumentations.ShiftScaleRotate(shift_limit=0.2, scale_limit=0.2, rotate_limit=20,
+                                        interpolation=cv2.INTER_LINEAR, border_mode=cv2.BORDER_CONSTANT, p=1),
+        albumentations.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0, p=1.0)
+    ])
+
+    valid_transform = albumentations.Compose([
+        albumentations.Resize(RESIZE_SIZE, RESIZE_SIZE, p=1),
+        albumentations.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0, p=1.0)
+    ])
 
     non_empty_mask_proba = train_config.get('NON_EMPTY_MASK_PROBA', 0)
     use_sampler = train_config['USE_SAMPLER']
@@ -177,7 +202,7 @@ def main():
             folds_distr_path=folds_distr_path,
         )
         valid_dataloader =  DataLoader(
-            dataset=valid_dataset, batch_size=batch_size, 
+            dataset=valid_dataset, batch_size=1,
             num_workers=num_workers, shuffle=False
         )
 
